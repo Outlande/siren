@@ -389,7 +389,7 @@ class WaveSource(Dataset):
 
 
 class PointCloud(Dataset):
-    def __init__(self, pointcloud_path, on_surface_points, keep_aspect_ratio=True):
+    def __init__(self, pointcloud_path, on_surface_points, keep_aspect_ratio=False):
         super().__init__()
 
         print("Loading point cloud")
@@ -448,9 +448,9 @@ class PointCloud(Dataset):
         sdf[self.on_surface_points:, :] = -1  # off-surface = -1
 
         # # visuliaze
-        # mlab.points3d(on_surface_coords[:,0], on_surface_coords[:,1], on_surface_coords[:,2], colormap='spectral', scale_factor=0.1, color=(0,1,0))
-        # mlab.points3d(off_surface_coords[:,0], off_surface_coords[:,1], off_surface_coords[:,2], colormap='spectral', scale_factor=0.1, color=(1,0,0))
-        # mlab.show()
+        mlab.points3d(on_surface_coords[:,0], on_surface_coords[:,1], on_surface_coords[:,2], colormap='spectral', scale_factor=0.01, color=(0,1,0))
+        mlab.points3d(off_surface_coords[:,0], off_surface_coords[:,1], off_surface_coords[:,2], colormap='spectral', scale_factor=0.01, color=(1,0,0))
+        mlab.show()
 
         coords = np.concatenate((on_surface_coords, off_surface_coords), axis=0)
         normals = np.concatenate((on_surface_normals, off_surface_normals), axis=0)
