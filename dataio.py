@@ -16,6 +16,10 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import Resize, Compose, ToTensor, Normalize
 
+from scipy.spatial.transform import Rotation as R
+from mayavi import mlab
+import cv2
+
 
 def get_mgrid(sidelen, dim=2):
     '''Generates a flattened grid of (x,y,...) coordinates in a range of -1 to 1.'''
@@ -388,7 +392,7 @@ class WaveSource(Dataset):
 
 
 class PointCloud(Dataset):
-    def __init__(self, pointcloud_path, on_surface_points, keep_aspect_ratio=True):
+    def __init__(self, pointcloud_path, on_surface_points, intrinsic, pose, camera_depth_path, fixed_range=True, keep_aspect_ratio=True):
         super().__init__()
 
         print("Loading point cloud")
@@ -414,6 +418,30 @@ class PointCloud(Dataset):
 
         self.on_surface_points = on_surface_points
 
+        # new parameters for camera
+        self.T = np.array([[1.000000, 0.000000, 0.000000, 0.000000],
+                            [0.000000, 1.000000, 0.000000, 0.000000],
+                            [0.000000, 0.000000, 1.000000, -2.250000],
+                            [0.000000, 0.000000, 0.000000, 1.000000]])
+
+        self.T2 = np.array([[0.999822, 0.0034419, 0.0185526, -0.786316],
+                            [-0.00350915, 0.999987, 0.00359374, 1.28433],
+                            [0.01854, 0.00365819, -0.999821, 1.45583],
+                            [0, 0, 0, 1]])
+        self.intrinsic = intrinsic
+
+        self.pose_mat = np.eye(4)
+        self.pose_mat[0:3, 0:3] = R.from_quat(pose[3:7]).as_matrix()
+        self.pose_mat[0:3, 3] = pose[0:3]
+        self.pose_mat = np.linalg.inv(np.dot(np.dot(self.T, self.T2), self.pose_mat))
+
+        self.rot = self.pose_mat[0:3,0:3]
+        self.trans = self.pose_mat[0:3,3]
+        self.depth = cv2.imread(camera_depth_path, cv2.IMREAD_UNCHANGED).transpose()/5000
+        self.coord_max = coord_max
+        self.coord_min = coord_min
+        self.picture_size = self.depth.shape
+
     def __len__(self):
         return self.coords.shape[0] // self.on_surface_points
 
@@ -432,14 +460,41 @@ class PointCloud(Dataset):
         off_surface_coords = np.random.uniform(-1, 1, size=(off_surface_samples, 3))
         off_surface_normals = np.ones((off_surface_samples, 3)) * -1
 
+        # false means not in sight while true means in sight
+        judge_result = self.projection_result( (off_surface_coords/2+0.5)*(self.coord_max - self.coord_min) + self.coord_min + self.coord_mean.repeat(off_surface_samples, axis=0))
+
         sdf = np.zeros((total_samples, 1))  # on-surface = 0
-        sdf[self.on_surface_points:, :] = -1  # off-surface = -1
+        sdf[self.on_surface_points:, :] = -1  # off-surface and not in sight = -1
+        sdf[self.on_surface_points:, :][judge_result] = 1  # off-surface and in sight = 1
+
+        # visuliaze
+        mlab.points3d(on_surface_coords[:,0], on_surface_coords[:,1], on_surface_coords[:,2], colormap='spectral', scale_factor=0.01, color=(0,1,0))
+        mlab.points3d(off_surface_coords[judge_result,0], off_surface_coords[judge_result,1], off_surface_coords[judge_result,2], colormap='spectral', scale_factor=0.01, color=(0,0,1))
+        # mlab.points3d(off_surface_coords[~judge_result,0], off_surface_coords[~judge_result,1], off_surface_coords[~judge_result,2], colormap='spectral', scale_factor=0.1, color=(1,0,0))
+        mlab.show()
 
         coords = np.concatenate((on_surface_coords, off_surface_coords), axis=0)
         normals = np.concatenate((on_surface_normals, off_surface_normals), axis=0)
 
         return {'coords': torch.from_numpy(coords).float()}, {'sdf': torch.from_numpy(sdf).float(),
                                                               'normals': torch.from_numpy(normals).float()}
+                                                                                                                           
+    def projection_result(self, points):
+        number = points.shape[0]
+        # [number, 3]
+        point_in_camera_cordinate = (np.dot(self.rot, points.transpose()) + np.tile(self.trans, (number, 1)).transpose()).transpose()
+        # [number, 2]
+        proj_res = (np.dot(self.intrinsic, (point_in_camera_cordinate / np.tile(point_in_camera_cordinate[:,2], (3, 1)).transpose() ).transpose() )[0:2]).transpose()
+
+        # if point is in front of the camera, and projection in side of width and height return true;
+        judge_res = ( (proj_res < np.tile(self.picture_size, (number, 1)) ) & (proj_res >= np.zeros((number,2)) ) ).all(axis=1)
+
+        # depth < depth image and depth > 0 and depth image < 10(depth trunc)
+        judge_proj = (point_in_camera_cordinate[judge_res, 2] < self.depth[proj_res[judge_res, 0].astype(int), proj_res[judge_res, 1].astype(int)]) \
+                & (point_in_camera_cordinate[judge_res, 2] > np.zeros_like(point_in_camera_cordinate[judge_res, 2])) \
+                & (self.depth[proj_res[judge_res, 0].astype(int), proj_res[judge_res, 1].astype(int)] < 10)
+        judge_res[judge_res] = judge_proj
+        return judge_res
 
 
 class Video(Dataset):

@@ -225,15 +225,17 @@ def sdf(model_output, gt):
     gradient = diff_operators.gradient(pred_sdf, coords)
 
     # Wherever boundary_values is not equal to zero, we interpret it as a boundary constraint.
-    sdf_constraint = torch.where(gt_sdf != -1, pred_sdf, torch.zeros_like(pred_sdf))
-    inter_constraint = torch.where(gt_sdf != -1, torch.zeros_like(pred_sdf), torch.exp(-1e2 * torch.abs(pred_sdf)))
-    normal_constraint = torch.where(gt_sdf != -1, 1 - F.cosine_similarity(gradient, gt_normals, dim=-1)[..., None],
+    sdf_constraint = torch.where(gt_sdf == 0, pred_sdf, torch.zeros_like(pred_sdf))
+    inter_constraint = torch.where(gt_sdf == -1, torch.exp(-1e2 * torch.abs(pred_sdf)), torch.zeros_like(pred_sdf))
+    free_constraint = torch.where(gt_sdf == 1, torch.exp(-1e2*pred_sdf), torch.zeros_like(pred_sdf))
+    normal_constraint = torch.where(gt_sdf == 0, 1 - F.cosine_similarity(gradient, gt_normals, dim=-1)[..., None],
                                     torch.zeros_like(gradient[..., :1]))
     grad_constraint = torch.abs(gradient.norm(dim=-1) - 1)
     # Exp      # Lapl
     # -----------------
     return {'sdf': torch.abs(sdf_constraint).mean() * 3e3,  # 1e4      # 3e3
-            'inter': inter_constraint.mean() * 1e2,  # 1e2                   # 1e3
+            'inter': inter_constraint.mean() * 0.5e2,  # 1e2                   # 1e3
+            'free': free_constraint.mean() * 0.5e2,
             'normal_constraint': normal_constraint.mean() * 1e2,  # 1e2
             'grad_constraint': grad_constraint.mean() * 5e1}  # 1e1      # 5e1
 
