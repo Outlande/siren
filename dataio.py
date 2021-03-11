@@ -16,6 +16,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import Resize, Compose, ToTensor, Normalize
 
+from mayavi import mlab
 
 def get_mgrid(sidelen, dim=2):
     '''Generates a flattened grid of (x,y,...) coordinates in a range of -1 to 1.'''
@@ -400,19 +401,29 @@ class PointCloud(Dataset):
 
         # Reshape point cloud such that it lies in bounding box of (-1, 1) (distorts geometry, but makes for high
         # sample efficiency)
-        coords -= np.mean(coords, axis=0, keepdims=True)
+        
+        # coords -= np.mean(coords, axis=0, keepdims=True)
+        coord_max = 4.513088101054274
+        coord_min = -4.468375898945726
+
         if keep_aspect_ratio:
-            coord_max = np.amax(coords)
-            coord_min = np.amin(coords)
+            frame_coord_max = np.amax(coords)
+            frame_coord_min = np.amin(coords)
         else:
-            coord_max = np.amax(coords, axis=0, keepdims=True)
-            coord_min = np.amin(coords, axis=0, keepdims=True)
+            frame_coord_max = np.amax(coords, axis=0, keepdims=True)
+            frame_coord_min = np.amin(coords, axis=0, keepdims=True)
 
         self.coords = (coords - coord_min) / (coord_max - coord_min)
         self.coords -= 0.5
         self.coords *= 2.
 
         self.on_surface_points = on_surface_points
+
+        self.range_min = ((frame_coord_min - coord_min) / (coord_max - coord_min) - 0.5)*2
+        self.range_max = ((frame_coord_max - coord_min) / (coord_max - coord_min) - 0.5)*2
+
+        print("coord:", coord_max, coord_max)
+        print("range:", self.range_min, self.range_max)
 
     def __len__(self):
         return self.coords.shape[0] // self.on_surface_points
@@ -429,11 +440,17 @@ class PointCloud(Dataset):
         on_surface_coords = self.coords[rand_idcs, :]
         on_surface_normals = self.normals[rand_idcs, :]
 
-        off_surface_coords = np.random.uniform(-1, 1, size=(off_surface_samples, 3))
+        # off_surface_coords = np.random.uniform(-1, 1, size=(off_surface_samples, 3))
+        off_surface_coords = np.random.uniform(self.range_min, self.range_max, size=(off_surface_samples, 3))
         off_surface_normals = np.ones((off_surface_samples, 3)) * -1
 
         sdf = np.zeros((total_samples, 1))  # on-surface = 0
         sdf[self.on_surface_points:, :] = -1  # off-surface = -1
+
+        # # visuliaze
+        # mlab.points3d(on_surface_coords[:,0], on_surface_coords[:,1], on_surface_coords[:,2], colormap='spectral', scale_factor=0.1, color=(0,1,0))
+        # mlab.points3d(off_surface_coords[:,0], off_surface_coords[:,1], off_surface_coords[:,2], colormap='spectral', scale_factor=0.1, color=(1,0,0))
+        # mlab.show()
 
         coords = np.concatenate((on_surface_coords, off_surface_coords), axis=0)
         normals = np.concatenate((on_surface_normals, off_surface_normals), axis=0)
