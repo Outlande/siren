@@ -180,7 +180,7 @@ class InverseHelmholtz(Dataset):
         coords[-self.N_src_samples * N_src_coords:, :] = samp_source_coords
         coords[:N_rec_coords, :] = self.rec_coords
 
-        # sample each of the source gaussians separately 
+        # sample each of the source gaussians separately
         source_boundary_values = torch.zeros(coords.shape[0], 2 * N_src_coords)
         for i in range(N_src_coords):
             source_boundary_values[:, 2 * i:2 * i + 2] = self.source * \
@@ -190,7 +190,7 @@ class InverseHelmholtz(Dataset):
         # truncate the source gaussians
         source_boundary_values[source_boundary_values < 1e-5] = 0.
 
-        # add the receiver dirichlet conditions 
+        # add the receiver dirichlet conditions
         rec_boundary_values = torch.zeros(coords.shape[0], self.rec.shape[1])
         rec_boundary_values[:N_rec_coords:, :] = self.rec
 
@@ -344,7 +344,7 @@ class WaveSource(Dataset):
         source_coords_y = r * torch.sin(phi) + self.source_coords[0, 2]
         source_coords = torch.cat((source_coords_x, source_coords_y), dim=1)
 
-        # uniformly sample domain and include coordinates where source is non-zero 
+        # uniformly sample domain and include coordinates where source is non-zero
         coords = torch.zeros(self.sidelength ** 2, 2).uniform_(-1, 1)
 
         if self.pretrain:
@@ -355,7 +355,7 @@ class WaveSource(Dataset):
             coords[-self.N_src_samples:, 1:] = source_coords
         else:
             # slowly grow time values from start time
-            # this currently assumes start_time = 0 and max time value is 0.75. 
+            # this currently assumes start_time = 0 and max time value is 0.75.
             time = torch.zeros(self.sidelength ** 2, 1).uniform_(0, 0.4 * (self.counter / self.full_count))
             coords = torch.cat((time, coords), dim=1)
 
@@ -404,17 +404,27 @@ class PointCloud(Dataset):
 
         # Reshape point cloud such that it lies in bounding box of (-1, 1) (distorts geometry, but makes for high
         # sample efficiency)
-        coords -= np.mean(coords, axis=0, keepdims=True)
+        # coords -= np.mean(coords, axis=0, keepdims=True)
+        coord_max = 4.513088101054274
+        coord_min = -4.468375898945726
         if keep_aspect_ratio:
-            coord_max = np.amax(coords)
-            coord_min = np.amin(coords)
+            frame_coord_max = np.amax(coords)
+            frame_coord_min = np.amin(coords)
         else:
-            coord_max = np.amax(coords, axis=0, keepdims=True)
-            coord_min = np.amin(coords, axis=0, keepdims=True)
+            frame_coord_max = np.amax(coords, axis=0, keepdims=True)
+            frame_coord_min = np.amin(coords, axis=0, keepdims=True)
 
         self.coords = (coords - coord_min) / (coord_max - coord_min)
         self.coords -= 0.5
         self.coords *= 2.
+        self.range_min = ((frame_coord_min - coord_min) / (coord_max - coord_min) - 0.5)*2
+        self.range_max = ((frame_coord_max - coord_min) / (coord_max - coord_min) - 0.5)*2
+        self.coord_max = coord_max
+        self.coord_min = coord_min
+
+        print("coord:", self.coord_max, self.coord_max)
+        print("range:", self.range_min, self.range_max)
+
 
         self.on_surface_points = on_surface_points
 
@@ -438,8 +448,6 @@ class PointCloud(Dataset):
         self.rot = self.pose_mat[0:3,0:3]
         self.trans = self.pose_mat[0:3,3]
         self.depth = cv2.imread(camera_depth_path, cv2.IMREAD_UNCHANGED).transpose()/5000
-        self.coord_max = coord_max
-        self.coord_min = coord_min
         self.picture_size = self.depth.shape
 
     def __len__(self):
@@ -457,28 +465,28 @@ class PointCloud(Dataset):
         on_surface_coords = self.coords[rand_idcs, :]
         on_surface_normals = self.normals[rand_idcs, :]
 
-        off_surface_coords = np.random.uniform(-1, 1, size=(off_surface_samples, 3))
+        off_surface_coords = np.random.uniform(self.range_min, self.range_max, size=(off_surface_samples, 3))
         off_surface_normals = np.ones((off_surface_samples, 3)) * -1
 
         # false means not in sight while true means in sight
-        judge_result = self.projection_result( (off_surface_coords/2+0.5)*(self.coord_max - self.coord_min) + self.coord_min + self.coord_mean.repeat(off_surface_samples, axis=0))
+        judge_result = self.projection_result( (off_surface_coords/2+0.5)*(self.coord_max - self.coord_min) + self.coord_min)
 
         sdf = np.zeros((total_samples, 1))  # on-surface = 0
         sdf[self.on_surface_points:, :] = -1  # off-surface and not in sight = -1
         sdf[self.on_surface_points:, :][judge_result] = 1  # off-surface and in sight = 1
 
-        # visuliaze
-        mlab.points3d(on_surface_coords[:,0], on_surface_coords[:,1], on_surface_coords[:,2], colormap='spectral', scale_factor=0.01, color=(0,1,0))
-        mlab.points3d(off_surface_coords[judge_result,0], off_surface_coords[judge_result,1], off_surface_coords[judge_result,2], colormap='spectral', scale_factor=0.01, color=(0,0,1))
-        # mlab.points3d(off_surface_coords[~judge_result,0], off_surface_coords[~judge_result,1], off_surface_coords[~judge_result,2], colormap='spectral', scale_factor=0.1, color=(1,0,0))
-        mlab.show()
+        # # visuliaze
+        # mlab.points3d(on_surface_coords[:,0], on_surface_coords[:,1], on_surface_coords[:,2], colormap='spectral', scale_factor=0.01, color=(0,1,0))
+        # mlab.points3d(off_surface_coords[judge_result,0], off_surface_coords[judge_result,1], off_surface_coords[judge_result,2], colormap='spectral', scale_factor=0.01, color=(0,0,1))
+        # mlab.points3d(off_surface_coords[~judge_result,0], off_surface_coords[~judge_result,1], off_surface_coords[~judge_result,2], colormap='spectral', scale_factor=0.01, color=(1,0,0))
+        # mlab.show()
 
         coords = np.concatenate((on_surface_coords, off_surface_coords), axis=0)
         normals = np.concatenate((on_surface_normals, off_surface_normals), axis=0)
 
         return {'coords': torch.from_numpy(coords).float()}, {'sdf': torch.from_numpy(sdf).float(),
                                                               'normals': torch.from_numpy(normals).float()}
-                                                                                                                           
+
     def projection_result(self, points):
         number = points.shape[0]
         # [number, 3]
