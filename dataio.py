@@ -407,6 +407,8 @@ class PointCloud(Dataset):
         # coords -= np.mean(coords, axis=0, keepdims=True)
         coord_max = 4.513088101054274
         coord_min = -4.468375898945726
+        # coord_max = 2.6277952141
+        # coord_min = -2.4723310908
         if keep_aspect_ratio:
             frame_coord_max = np.amax(coords)
             frame_coord_min = np.amin(coords)
@@ -421,7 +423,7 @@ class PointCloud(Dataset):
         self.range_max = ((frame_coord_max - coord_min) / (coord_max - coord_min) - 0.5)*2
         self.coord_max = coord_max
         self.coord_min = coord_min
-
+        print("frame_coord", frame_coord_max, frame_coord_min)
         print("coord:", self.coord_max, self.coord_max)
         print("range:", self.range_min, self.range_max)
 

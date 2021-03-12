@@ -5,4 +5,4 @@ python experiment_scripts/train_sdf.py --model_type=sine --point_cloud_path=../d
     --camera_number=10 --camera_depth_path=../datasets/ICL2_clean_RGBD/depth/10.png --camera_intrinsic=../datasets/ICL2_clean_RGBD/ICL_gt.yaml
 
 
-python experiment_scripts/test_sdf.py --checkpoint_path=logs/network/test_code_1/checkpoints/model_current.pth --experiment_name=test_result --resolution=512
+python experiment_scripts/test_sdf.py --checkpoint_path=logs/network/loss_range_same  /checkpoints/model_current.pth --experiment_name=test_result --resolution=512
