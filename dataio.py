@@ -451,7 +451,7 @@ class PointCloud(Dataset):
         self.trans = self.pose_mat[0:3,3]
         self.depth = cv2.imread(camera_depth_path, cv2.IMREAD_UNCHANGED).transpose()/5000
         self.picture_size = self.depth.shape
-        self.range_ratio = 2/3
+        self.range_ratio = 9/10
 
     def __len__(self):
         return self.coords.shape[0] // self.on_surface_points
@@ -472,30 +472,37 @@ class PointCloud(Dataset):
         off_surface_samples_space = off_surface_samples - off_surface_samples_range
 
         off_surface_coords_range = np.random.uniform(self.range_min, self.range_max, size=(off_surface_samples_range, 3))
-        off_surface_coords_space = np.random.uniform(-1, 1, size=(off_surface_samples_space, 3))
+
+        off_surface_coords_space = np.zeros((0,3))
+        while(off_surface_coords_space.shape[0] < off_surface_samples_space):
+            off_surface_coords_space_pre = np.random.uniform(-1, 1, size=(off_surface_samples, 3))
+            off_surface_coords_space_pre_loc = (((off_surface_coords_space_pre > self.range_min)) & (off_surface_coords_space_pre < self.range_max)).all(axis=1)
+            off_surface_coords_space_pre = off_surface_coords_space_pre[~off_surface_coords_space_pre_loc]
+            off_surface_coords_space = np.concatenate((off_surface_coords_space, off_surface_coords_space_pre), axis=0)
+        off_surface_coords_space = off_surface_coords_space[0:off_surface_samples_space]
+
         off_surface_coords = np.concatenate((off_surface_coords_range, off_surface_coords_space), axis=0)
         off_surface_normals = np.ones((off_surface_samples, 3)) * -1
 
         # false means not in sight while true means in sight
-        judge_result = self.projection_result( (off_surface_coords/2+0.5)*(self.coord_max - self.coord_min) + self.coord_min)
-        judge_result_range = judge_result[:off_surface_samples_range]
-        judge_result_space = judge_result[off_surface_samples_range:]
+        judge_result = self.projection_result( (off_surface_coords_range/2+0.5)*(self.coord_max - self.coord_min) + self.coord_min)
 
         sdf = np.zeros((total_samples, 1))  # on-surface = 0
 
-        sdf[self.on_surface_points:, :][judge_result] = 1  # off-surface and in sight = 1
-        sdf[self.on_surface_points:self.on_surface_points+off_surface_samples_range, :][~judge_result_range] = -1  # off-surface ,in range ,and not in sight = -1
-        sdf[self.on_surface_points+off_surface_samples_range:, :][~judge_result_space] = 2  # off-surface ,not in range ,and not in sight = 2
-
-
-        # # visuliaze
-        # mlab.points3d(on_surface_coords[:,0], on_surface_coords[:,1], on_surface_coords[:,2], colormap='spectral', scale_factor=0.01, color=(0,1,0))
-        # mlab.points3d(off_surface_coords[judge_result,0], off_surface_coords[judge_result,1], off_surface_coords[judge_result,2], colormap='spectral', scale_factor=0.01, color=(0,0,1))
-        # mlab.points3d(off_surface_coords[~judge_result,0], off_surface_coords[~judge_result,1], off_surface_coords[~judge_result,2], colormap='spectral', scale_factor=0.01, color=(1,0,0))
-        # mlab.show()
+        sdf[self.on_surface_points:self.on_surface_points+off_surface_samples_range, :][judge_result] = 1  # off-surface and in sight = 1
+        sdf[self.on_surface_points:self.on_surface_points+off_surface_samples_range, :][~judge_result] = -1  # off-surface ,in range ,and not in sight = -1
+        sdf[self.on_surface_points+off_surface_samples_range:, :] = 2  # off-surface ,not in range = 2
 
         coords = np.concatenate((on_surface_coords, off_surface_coords), axis=0)
         normals = np.concatenate((on_surface_normals, off_surface_normals), axis=0)
+
+        # visuliaze
+        print(coords.shape)
+        mlab.points3d(coords[sdf[:,0]==0,0], coords[sdf[:,0]==0,1], coords[sdf[:,0]==0,2], colormap='spectral', scale_factor=0.005, color=(0,1,0))
+        mlab.points3d(coords[sdf[:,0]==1,0], coords[sdf[:,0]==1,1], coords[sdf[:,0]==1,2], colormap='spectral', scale_factor=0.005, color=(0,0,1))
+        mlab.points3d(coords[sdf[:,0]==-1,0], coords[sdf[:,0]==-1,1], coords[sdf[:,0]==-1,2], colormap='spectral', scale_factor=0.005, color=(1,0,0))
+        mlab.points3d(coords[sdf[:,0]==2,0], coords[sdf[:,0]==2,1], coords[sdf[:,0]==2,2], colormap='spectral', scale_factor=0.005, color=(1,1,0))
+        mlab.show()
 
         return {'coords': torch.from_numpy(coords).float()}, {'sdf': torch.from_numpy(sdf).float(),
                                                               'normals': torch.from_numpy(normals).float()}
