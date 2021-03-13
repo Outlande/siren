@@ -16,7 +16,7 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
 
     optim = torch.optim.Adam(lr=lr, params=model.parameters())
 
-    # copy settings from Raissi et al. (2019) and here 
+    # copy settings from Raissi et al. (2019) and here
     # https://github.com/maziarraissi/PINNs
     if use_lbfgs:
         optim = torch.optim.LBFGS(lr=lr, params=model.parameters(), max_iter=50000, max_eval=50000,
@@ -49,7 +49,7 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
 
             for step, (model_input, gt) in enumerate(train_dataloader):
                 start_time = time.time()
-            
+
                 model_input = {key: value.cuda() for key, value in model_input.items()}
                 gt = {key: value.cuda() for key, value in gt.items()}
 
@@ -64,7 +64,7 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
                         losses = loss_fn(model_output, gt)
                         train_loss = 0.
                         for loss_name, loss in losses.items():
-                            train_loss += loss.mean() 
+                            train_loss += loss.mean()
                         train_loss.backward()
                         return train_loss
                     optim.step(closure)

@@ -451,6 +451,7 @@ class PointCloud(Dataset):
         self.trans = self.pose_mat[0:3,3]
         self.depth = cv2.imread(camera_depth_path, cv2.IMREAD_UNCHANGED).transpose()/5000
         self.picture_size = self.depth.shape
+        self.range_ratio = 2/3
 
     def __len__(self):
         return self.coords.shape[0] // self.on_surface_points
@@ -467,15 +468,25 @@ class PointCloud(Dataset):
         on_surface_coords = self.coords[rand_idcs, :]
         on_surface_normals = self.normals[rand_idcs, :]
 
-        off_surface_coords = np.random.uniform(self.range_min, self.range_max, size=(off_surface_samples, 3))
+        off_surface_samples_range = int(self.range_ratio * off_surface_samples)
+        off_surface_samples_space = off_surface_samples - off_surface_samples_range
+
+        off_surface_coords_range = np.random.uniform(self.range_min, self.range_max, size=(off_surface_samples_range, 3))
+        off_surface_coords_space = np.random.uniform(-1, 1, size=(off_surface_samples_space, 3))
+        off_surface_coords = np.concatenate((off_surface_coords_range, off_surface_coords_space), axis=0)
         off_surface_normals = np.ones((off_surface_samples, 3)) * -1
 
         # false means not in sight while true means in sight
         judge_result = self.projection_result( (off_surface_coords/2+0.5)*(self.coord_max - self.coord_min) + self.coord_min)
+        judge_result_range = judge_result[:off_surface_samples_range]
+        judge_result_space = judge_result[off_surface_samples_range:]
 
         sdf = np.zeros((total_samples, 1))  # on-surface = 0
-        sdf[self.on_surface_points:, :] = -1  # off-surface and not in sight = -1
+
         sdf[self.on_surface_points:, :][judge_result] = 1  # off-surface and in sight = 1
+        sdf[self.on_surface_points:self.on_surface_points+off_surface_samples_range, :][~judge_result_range] = -1  # off-surface ,in range ,and not in sight = -1
+        sdf[self.on_surface_points+off_surface_samples_range:, :][~judge_result_space] = 2  # off-surface ,not in range ,and not in sight = 2
+
 
         # # visuliaze
         # mlab.points3d(on_surface_coords[:,0], on_surface_coords[:,1], on_surface_coords[:,2], colormap='spectral', scale_factor=0.01, color=(0,1,0))
