@@ -17,7 +17,7 @@ from torch.utils.data import Dataset
 from torchvision.transforms import Resize, Compose, ToTensor, Normalize
 
 from scipy.spatial.transform import Rotation as R
-from mayavi import mlab
+# from mayavi import mlab
 import cv2
 
 
@@ -485,24 +485,25 @@ class PointCloud(Dataset):
         off_surface_normals = np.ones((off_surface_samples, 3)) * -1
 
         # false means not in sight while true means in sight
-        judge_result = self.projection_result( (off_surface_coords_range/2+0.5)*(self.coord_max - self.coord_min) + self.coord_min)
+        inner_result, outer_result = self.projection_result( (off_surface_coords_range/2+0.5)*(self.coord_max - self.coord_min) + self.coord_min)
 
         sdf = np.zeros((total_samples, 1))  # on-surface = 0
 
-        sdf[self.on_surface_points:self.on_surface_points+off_surface_samples_range, :][judge_result] = 1  # off-surface and in sight = 1
-        sdf[self.on_surface_points:self.on_surface_points+off_surface_samples_range, :][~judge_result] = -1  # off-surface ,in range ,and not in sight = -1
-        sdf[self.on_surface_points+off_surface_samples_range:, :] = 2  # off-surface ,not in range = 2
+        sdf[self.on_surface_points:self.on_surface_points+off_surface_samples_range, :][inner_result] = 1  # off-surface and in sight inner = 1
+        sdf[self.on_surface_points:self.on_surface_points+off_surface_samples_range, :][~inner_result] = 2  # off-surface ,in range ,and not in sight = 2
+        sdf[self.on_surface_points:self.on_surface_points+off_surface_samples_range, :][outer_result] = -1  # off-surface and in sight outer = -1
+        sdf[self.on_surface_points+off_surface_samples_range:, :] = -2  # off-surface ,not in range = 2
 
         coords = np.concatenate((on_surface_coords, off_surface_coords), axis=0)
         normals = np.concatenate((on_surface_normals, off_surface_normals), axis=0)
 
-        # visuliaze
-        print(coords.shape)
-        mlab.points3d(coords[sdf[:,0]==0,0], coords[sdf[:,0]==0,1], coords[sdf[:,0]==0,2], colormap='spectral', scale_factor=0.005, color=(0,1,0))
-        mlab.points3d(coords[sdf[:,0]==1,0], coords[sdf[:,0]==1,1], coords[sdf[:,0]==1,2], colormap='spectral', scale_factor=0.005, color=(0,0,1))
-        mlab.points3d(coords[sdf[:,0]==-1,0], coords[sdf[:,0]==-1,1], coords[sdf[:,0]==-1,2], colormap='spectral', scale_factor=0.005, color=(1,0,0))
-        mlab.points3d(coords[sdf[:,0]==2,0], coords[sdf[:,0]==2,1], coords[sdf[:,0]==2,2], colormap='spectral', scale_factor=0.005, color=(1,1,0))
-        mlab.show()
+        # # visuliaze
+        # mlab.points3d(coords[sdf[:,0]==0,0], coords[sdf[:,0]==0,1], coords[sdf[:,0]==0,2], colormap='spectral', scale_factor=0.005, color=(0,1,0))
+        # mlab.points3d(coords[sdf[:,0]==1,0], coords[sdf[:,0]==1,1], coords[sdf[:,0]==1,2], colormap='spectral', scale_factor=0.005, color=(0,0,1))
+        # mlab.points3d(coords[sdf[:,0]==-1,0], coords[sdf[:,0]==-1,1], coords[sdf[:,0]==-1,2], colormap='spectral', scale_factor=0.005, color=(1,0,0))
+        # mlab.points3d(coords[sdf[:,0]==2,0], coords[sdf[:,0]==2,1], coords[sdf[:,0]==2,2], colormap='spectral', scale_factor=0.005, color=(1,1,0))
+        # mlab.points3d(coords[sdf[:,0]==-2,0], coords[sdf[:,0]==-2,1], coords[sdf[:,0]==-2,2], colormap='spectral', scale_factor=0.005, color=(0,1,1))
+        # mlab.show()
 
         return {'coords': torch.from_numpy(coords).float()}, {'sdf': torch.from_numpy(sdf).float(),
                                                               'normals': torch.from_numpy(normals).float()}
@@ -516,13 +517,19 @@ class PointCloud(Dataset):
 
         # if point is in front of the camera, and projection in side of width and height return true;
         judge_res = ( (proj_res < np.tile(self.picture_size, (number, 1)) ) & (proj_res >= np.zeros((number,2)) ) ).all(axis=1)
+        inner_res = judge_res.copy()
+        outer_res = judge_res.copy()
 
         # depth < depth image and depth > 0 and depth image < 10(depth trunc)
-        judge_proj = (point_in_camera_cordinate[judge_res, 2] < self.depth[proj_res[judge_res, 0].astype(int), proj_res[judge_res, 1].astype(int)]) \
+        judge_proj_inner = (point_in_camera_cordinate[judge_res, 2] < self.depth[proj_res[judge_res, 0].astype(int), proj_res[judge_res, 1].astype(int)]) \
                 & (point_in_camera_cordinate[judge_res, 2] > np.zeros_like(point_in_camera_cordinate[judge_res, 2])) \
                 & (self.depth[proj_res[judge_res, 0].astype(int), proj_res[judge_res, 1].astype(int)] < 10)
-        judge_res[judge_res] = judge_proj
-        return judge_res
+
+        judge_proj_outer = (point_in_camera_cordinate[judge_res, 2] > self.depth[proj_res[judge_res, 0].astype(int), proj_res[judge_res, 1].astype(int)]) \
+                & (self.depth[proj_res[judge_res, 0].astype(int), proj_res[judge_res, 1].astype(int)] < 10)
+        inner_res[judge_res] = judge_proj_inner
+        outer_res[judge_res] = judge_proj_outer
+        return inner_res, outer_res
 
 
 class Video(Dataset):
