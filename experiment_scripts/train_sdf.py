@@ -46,6 +46,9 @@ p.add_argument('--camera_depth_path', type=str, default='/home/sitzmann/data/dep
                help='camera depth image in')
 p.add_argument('--camera_intrinsic', type=str, default='/home/sitzmann/data/intrinsic.txt',
                help='camera pose in tum format')
+
+p.add_argument('--last_checkpoint', default=None, help='Checkpoint to finetune model.')
+
 opt = p.parse_args()
 
 # load camera intrinsic
@@ -56,7 +59,8 @@ with open(opt.camera_intrinsic) as f:
 pose = np.genfromtxt(opt.camera_pose_path)[opt.camera_number-1,1:]
 
 
-sdf_dataset = dataio.PointCloud(opt.point_cloud_path, on_surface_points=opt.batch_size, intrinsic=intrinsic, pose=pose, camera_depth_path=os.path.join(opt.camera_depth_path))
+sdf_dataset = dataio.PointCloud(opt.point_cloud_path, on_surface_points=opt.batch_size, intrinsic=intrinsic, \
+    pose=pose, camera_depth_path=os.path.join(opt.camera_depth_path), last_checkpoint=opt.last_checkpoint)
 
 dataloader = DataLoader(sdf_dataset, shuffle=True, batch_size=1, pin_memory=True, num_workers=0)
 
