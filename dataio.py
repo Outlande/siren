@@ -12,12 +12,13 @@ import skimage
 import skimage.filters
 import skvideo.io
 import torch
+import modules
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import Resize, Compose, ToTensor, Normalize
 
 from scipy.spatial.transform import Rotation as R
-# from mayavi import mlab
+from mayavi import mlab
 import cv2
 
 
@@ -390,9 +391,21 @@ class WaveSource(Dataset):
         return {'coords': coords}, {'source_boundary_values': boundary_values, 'dirichlet_mask': dirichlet_mask,
                                     'squared_slowness': squared_slowness, 'squared_slowness_grid': squared_slowness_grid}
 
+class SDFDecoder(torch.nn.Module):
+    def __init__(self, checkpoint_path):
+        super().__init__()
+        # Define the model.
+        self.model = modules.SingleBVPNet(type='sine', final_layer_factor=1, in_features=3)
+        self.model.load_state_dict(torch.load(checkpoint_path))
+        self.model.cuda()
+
+    def forward(self, coords):
+        model_in = {'coords': coords}
+        return self.model(model_in)['model_out']
+
 
 class PointCloud(Dataset):
-    def __init__(self, pointcloud_path, on_surface_points, intrinsic, pose, camera_depth_path, fixed_range=True, keep_aspect_ratio=True):
+    def __init__(self, pointcloud_path, on_surface_points, intrinsic, pose, camera_depth_path, keep_aspect_ratio=True, visual=False):
         super().__init__()
 
         print("Loading point cloud")
@@ -452,6 +465,7 @@ class PointCloud(Dataset):
         self.depth = cv2.imread(camera_depth_path, cv2.IMREAD_UNCHANGED).transpose()/5000
         self.picture_size = self.depth.shape
         self.range_ratio = 2/3
+        self.visual = visual
 
     def __len__(self):
         return self.coords.shape[0] // self.on_surface_points
@@ -498,12 +512,13 @@ class PointCloud(Dataset):
         normals = np.concatenate((on_surface_normals, off_surface_normals), axis=0)
 
         # # visuliaze
-        # mlab.points3d(coords[sdf[:,0]==0,0], coords[sdf[:,0]==0,1], coords[sdf[:,0]==0,2], colormap='spectral', scale_factor=0.005, color=(0,1,0))
-        # mlab.points3d(coords[sdf[:,0]==1,0], coords[sdf[:,0]==1,1], coords[sdf[:,0]==1,2], colormap='spectral', scale_factor=0.005, color=(0,0,1))
-        # mlab.points3d(coords[sdf[:,0]==-1,0], coords[sdf[:,0]==-1,1], coords[sdf[:,0]==-1,2], colormap='spectral', scale_factor=0.005, color=(1,0,0))
-        # mlab.points3d(coords[sdf[:,0]==2,0], coords[sdf[:,0]==2,1], coords[sdf[:,0]==2,2], colormap='spectral', scale_factor=0.005, color=(1,1,0))
-        # mlab.points3d(coords[sdf[:,0]==-2,0], coords[sdf[:,0]==-2,1], coords[sdf[:,0]==-2,2], colormap='spectral', scale_factor=0.005, color=(0,1,1))
-        # mlab.show()
+        if self.visual:
+            mlab.points3d(coords[sdf[:,0]==0,0], coords[sdf[:,0]==0,1], coords[sdf[:,0]==0,2], colormap='spectral', scale_factor=0.005, color=(0,1,0))
+            mlab.points3d(coords[sdf[:,0]==1,0], coords[sdf[:,0]==1,1], coords[sdf[:,0]==1,2], colormap='spectral', scale_factor=0.005, color=(0,0,1))
+            mlab.points3d(coords[sdf[:,0]==-1,0], coords[sdf[:,0]==-1,1], coords[sdf[:,0]==-1,2], colormap='spectral', scale_factor=0.005, color=(1,0,0))
+            mlab.points3d(coords[sdf[:,0]==2,0], coords[sdf[:,0]==2,1], coords[sdf[:,0]==2,2], colormap='spectral', scale_factor=0.005, color=(1,1,0))
+            mlab.points3d(coords[sdf[:,0]==-2,0], coords[sdf[:,0]==-2,1], coords[sdf[:,0]==-2,2], colormap='spectral', scale_factor=0.005, color=(0,1,1))
+            mlab.show()
 
         return {'coords': torch.from_numpy(coords).float()}, {'sdf': torch.from_numpy(sdf).float(),
                                                               'normals': torch.from_numpy(normals).float()}
@@ -538,7 +553,7 @@ class PointCloud(Dataset):
 
 
 class Reservoir(Dataset):
-    def __init__(self, pointcloud_path, reservoir_path, on_surface_points, intrinsic, pose, camera_depth_path, fixed_range=True, keep_aspect_ratio=True):
+    def __init__(self, pointcloud_path, reservoir_path, on_surface_points, intrinsic, pose, camera_depth_path, last_checkpoint, keep_aspect_ratio=True, visual=False):
         super().__init__()
 
         print("Loading point cloud")
@@ -548,6 +563,10 @@ class Reservoir(Dataset):
         print("Replay")
         reservoir = np.genfromtxt(reservoir_path)
         print("Finished replay")
+
+        print("Loading network")
+        self.pretrained_model = SDFDecoder(last_checkpoint)
+        print("Finished loading network")
 
         coords = point_cloud[:, :3]
         self.normals = point_cloud[:, 3:]
@@ -606,6 +625,7 @@ class Reservoir(Dataset):
         self.trans = self.pose_mat[0:3, 3]
         self.depth = cv2.imread(camera_depth_path, cv2.IMREAD_UNCHANGED).transpose() / 5000
         self.picture_size = self.depth.shape
+        self.visual = visual
         self.range_ratio = 2 / 3
 
     def __len__(self):
@@ -649,7 +669,7 @@ class Reservoir(Dataset):
 
         # false means not in sight while true means in sight
         inner_result, outer_result = self.projection_result(
-            (off_surface_coords / 2 + 0.5) * (self.coord_max - self.coord_min) + self.coord_min)
+            (off_surface_coords / 2 + 0.5) * (self.coord_max - self.coord_min) + self.coord_min, off_surface_coords)
 
         sdf = np.zeros((total_samples, 1))  # on-surface = 0
 
@@ -662,17 +682,18 @@ class Reservoir(Dataset):
         normals = np.concatenate((on_surface_normals, on_surface_normals_res, off_surface_normals), axis=0)
 
         # # visuliaze
-        # mlab.points3d(coords[sdf[:,0]==0,0], coords[sdf[:,0]==0,1], coords[sdf[:,0]==0,2], colormap='spectral', scale_factor=0.005, color=(0,1,0))
-        # mlab.points3d(coords[sdf[:,0]==1,0], coords[sdf[:,0]==1,1], coords[sdf[:,0]==1,2], colormap='spectral', scale_factor=0.005, color=(0,0,1))
-        # mlab.points3d(coords[sdf[:,0]==-1,0], coords[sdf[:,0]==-1,1], coords[sdf[:,0]==-1,2], colormap='spectral', scale_factor=0.005, color=(1,0,0))
-        # mlab.points3d(coords[sdf[:,0]==2,0], coords[sdf[:,0]==2,1], coords[sdf[:,0]==2,2], colormap='spectral', scale_factor=0.005, color=(1,1,0))
-        # mlab.points3d(coords[sdf[:,0]==-2,0], coords[sdf[:,0]==-2,1], coords[sdf[:,0]==-2,2], colormap='spectral', scale_factor=0.005, color=(0,1,1))
-        # mlab.show()
+        if self.visual:
+            mlab.points3d(coords[sdf[:,0]==0,0], coords[sdf[:,0]==0,1], coords[sdf[:,0]==0,2], colormap='spectral', scale_factor=0.005, color=(0,1,0))
+            mlab.points3d(coords[sdf[:,0]==1,0], coords[sdf[:,0]==1,1], coords[sdf[:,0]==1,2], colormap='spectral', scale_factor=0.005, color=(0,0,1))
+            mlab.points3d(coords[sdf[:,0]==-1,0], coords[sdf[:,0]==-1,1], coords[sdf[:,0]==-1,2], colormap='spectral', scale_factor=0.005, color=(1,0,0))
+            mlab.points3d(coords[sdf[:,0]==2,0], coords[sdf[:,0]==2,1], coords[sdf[:,0]==2,2], colormap='spectral', scale_factor=0.005, color=(1,1,0))
+            mlab.points3d(coords[sdf[:,0]==-2,0], coords[sdf[:,0]==-2,1], coords[sdf[:,0]==-2,2], colormap='spectral', scale_factor=0.005, color=(0,1,1))
+            mlab.show()
 
         return {'coords': torch.from_numpy(coords).float()}, {'sdf': torch.from_numpy(sdf).float(),
                                                               'normals': torch.from_numpy(normals).float()}
 
-    def projection_result(self, points):
+    def projection_result(self, points, points_normal):
         number = points.shape[0]
         # [number, 3]
         point_in_camera_cordinate = (
@@ -701,12 +722,27 @@ class Reservoir(Dataset):
         inner_res[judge_res] = judge_proj_inner
         outer_res[judge_res] = judge_proj_outer
 
-        # judge for square
-        insight_coord_max = np.amax(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
-        insight_coord_min = np.amin(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
-        inner_res = (
-        ((point_in_camera_cordinate > insight_coord_min) & (point_in_camera_cordinate < insight_coord_max)).all(
-            axis=1) & (~outer_res))
+        # # judge for square
+        # insight_coord_max = np.amax(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
+        # insight_coord_min = np.amin(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
+        # inner_res = (
+        # ((point_in_camera_cordinate > insight_coord_min) & (point_in_camera_cordinate < insight_coord_max)).all(
+        #     axis=1) & (~outer_res))
+
+
+        # pretrained_model judge
+        sdf_pre = self.pretrained_model(torch.tensor(points_normal, dtype=torch.float32).cuda()).squeeze().detach().cpu().numpy()
+        insight_pre = sdf_pre > 0
+        outsight_pre = sdf_pre <= 0
+
+        # inner present watched now or yet
+        # outer present never watched and outside
+        # inner_res = (inner_res) | (insight_pre)
+        # outer_res = ((outer_res) | (outsight_pre)) & (~inner_res)
+
+        # outer is sum of outer in pre or now and cant be inner
+        outer_res = (outer_res) | (outsight_pre) & (~inner_res)
+
         return inner_res, outer_res
 
 class Video(Dataset):
