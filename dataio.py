@@ -451,7 +451,7 @@ class PointCloud(Dataset):
         self.trans = self.pose_mat[0:3,3]
         self.depth = cv2.imread(camera_depth_path, cv2.IMREAD_UNCHANGED).transpose()/5000
         self.picture_size = self.depth.shape
-        self.range_ratio = 9/10
+        self.range_ratio = 2/3
 
     def __len__(self):
         return self.coords.shape[0] // self.on_surface_points
@@ -491,9 +491,9 @@ class PointCloud(Dataset):
 
         sdf[self.on_surface_points:, :][inner_result] = 1  # off-surface and in sight inner = 1
         sdf[self.on_surface_points:, :][~inner_result] = 2  # off-surface ,in range ,and not in sight = 2
-        sdf[self.on_surface_points:, :][outer_result] = -1  # off-surface and in sight outer = -1
         sdf[self.on_surface_points+off_surface_samples_range:, :] = -2  # off-surface ,not in range = 2
-
+        sdf[self.on_surface_points:, :][outer_result] = -1  # off-surface and in sight outer = -1
+        
         coords = np.concatenate((on_surface_coords, off_surface_coords), axis=0)
         normals = np.concatenate((on_surface_normals, off_surface_normals), axis=0)
 
