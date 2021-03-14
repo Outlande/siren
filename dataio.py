@@ -485,13 +485,13 @@ class PointCloud(Dataset):
         off_surface_normals = np.ones((off_surface_samples, 3)) * -1
 
         # false means not in sight while true means in sight
-        inner_result, outer_result = self.projection_result( (off_surface_coords_range/2+0.5)*(self.coord_max - self.coord_min) + self.coord_min)
+        inner_result, outer_result = self.projection_result( (off_surface_coords/2+0.5)*(self.coord_max - self.coord_min) + self.coord_min)
 
         sdf = np.zeros((total_samples, 1))  # on-surface = 0
 
-        sdf[self.on_surface_points:self.on_surface_points+off_surface_samples_range, :][inner_result] = 1  # off-surface and in sight inner = 1
-        sdf[self.on_surface_points:self.on_surface_points+off_surface_samples_range, :][~inner_result] = 2  # off-surface ,in range ,and not in sight = 2
-        sdf[self.on_surface_points:self.on_surface_points+off_surface_samples_range, :][outer_result] = -1  # off-surface and in sight outer = -1
+        sdf[self.on_surface_points:, :][inner_result] = 1  # off-surface and in sight inner = 1
+        sdf[self.on_surface_points:, :][~inner_result] = 2  # off-surface ,in range ,and not in sight = 2
+        sdf[self.on_surface_points:, :][outer_result] = -1  # off-surface and in sight outer = -1
         sdf[self.on_surface_points+off_surface_samples_range:, :] = -2  # off-surface ,not in range = 2
 
         coords = np.concatenate((on_surface_coords, off_surface_coords), axis=0)
@@ -529,6 +529,11 @@ class PointCloud(Dataset):
                 & (self.depth[proj_res[judge_res, 0].astype(int), proj_res[judge_res, 1].astype(int)] < 10)
         inner_res[judge_res] = judge_proj_inner
         outer_res[judge_res] = judge_proj_outer
+
+        # judge for square
+        insight_coord_max = np.amax(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
+        insight_coord_min = np.amin(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
+        inner_res = (((point_in_camera_cordinate > insight_coord_min) & (point_in_camera_cordinate < insight_coord_max)).all(axis=1) &  (~outer_res))
         return inner_res, outer_res
 
 
