@@ -537,6 +537,178 @@ class PointCloud(Dataset):
         return inner_res, outer_res
 
 
+class Reservoir(Dataset):
+    def __init__(self, pointcloud_path, reservoir_path, on_surface_points, intrinsic, pose, camera_depth_path, fixed_range=True, keep_aspect_ratio=True):
+        super().__init__()
+
+        print("Loading point cloud")
+        point_cloud = np.genfromtxt(pointcloud_path)
+        print("Finished loading point cloud")
+
+        print("Replay")
+        reservoir = np.genfromtxt(reservoir_path)
+        print("Finished replay")
+
+        coords = point_cloud[:, :3]
+        self.normals = point_cloud[:, 3:]
+
+        coords_res = reservoir[:, :3]
+        self.normals_res = reservoir[:, 3:]
+
+        # Reshape point cloud such that it lies in bounding box of (-1, 1) (distorts geometry, but makes for high
+        # sample efficiency)
+        # coords -= np.mean(coords, axis=0, keepdims=True)
+        coord_max = 4.513088101054274
+        coord_min = -4.468375898945726
+        # coord_max = 2.6277952141
+        # coord_min = -2.4723310908
+        if keep_aspect_ratio:
+            frame_coord_max = np.amax(coords)
+            frame_coord_min = np.amin(coords)
+        else:
+            frame_coord_max = np.amax(coords, axis=0, keepdims=True)
+            frame_coord_min = np.amin(coords, axis=0, keepdims=True)
+
+        self.coords = (coords - coord_min) / (coord_max - coord_min)
+        self.coords -= 0.5
+        self.coords *= 2.
+        self.coords_res = (coords_res - coord_min) / (coord_max - coord_min)
+        self.coords_res -= 0.5
+        self.coords_res *= 2.
+        self.range_min = ((frame_coord_min - coord_min) / (coord_max - coord_min) - 0.5) * 2
+        self.range_max = ((frame_coord_max - coord_min) / (coord_max - coord_min) - 0.5) * 2
+        self.coord_max = coord_max
+        self.coord_min = coord_min
+        print("frame_coord", frame_coord_max, frame_coord_min)
+        print("coord:", self.coord_max, self.coord_max)
+        print("range:", self.range_min, self.range_max)
+
+        self.on_surface_points = on_surface_points
+
+        # new parameters for camera
+        self.T = np.array([[1.000000, 0.000000, 0.000000, 0.000000],
+                           [0.000000, 1.000000, 0.000000, 0.000000],
+                           [0.000000, 0.000000, 1.000000, -2.250000],
+                           [0.000000, 0.000000, 0.000000, 1.000000]])
+
+        self.T2 = np.array([[0.999822, 0.0034419, 0.0185526, -0.786316],
+                            [-0.00350915, 0.999987, 0.00359374, 1.28433],
+                            [0.01854, 0.00365819, -0.999821, 1.45583],
+                            [0, 0, 0, 1]])
+        self.intrinsic = intrinsic
+
+        self.pose_mat = np.eye(4)
+        self.pose_mat[0:3, 0:3] = R.from_quat(pose[3:7]).as_matrix()
+        self.pose_mat[0:3, 3] = pose[0:3]
+        self.pose_mat = np.linalg.inv(np.dot(np.dot(self.T, self.T2), self.pose_mat))
+
+        self.rot = self.pose_mat[0:3, 0:3]
+        self.trans = self.pose_mat[0:3, 3]
+        self.depth = cv2.imread(camera_depth_path, cv2.IMREAD_UNCHANGED).transpose() / 5000
+        self.picture_size = self.depth.shape
+        self.range_ratio = 2 / 3
+
+    def __len__(self):
+        return self.coords.shape[0] // self.on_surface_points
+
+    def __getitem__(self, idx):
+        point_cloud_size = self.coords.shape[0]
+        reservoir_size = self.coords_res.shape[0]
+
+        off_surface_samples = self.on_surface_points  # **2
+        total_samples = self.on_surface_points + off_surface_samples
+
+        # Random coords
+        rand_idcs = np.random.choice(point_cloud_size, size=self.on_surface_points//2)
+        rand_idcs_res = np.random.choice(reservoir_size, size=self.on_surface_points - np.size(rand_idcs))
+
+        on_surface_coords = self.coords[rand_idcs, :]
+        on_surface_normals = self.normals[rand_idcs, :]
+
+        on_surface_coords_res = self.coords_res[rand_idcs_res, :]
+        on_surface_normals_res = self.normals_res[rand_idcs_res, :]
+
+        off_surface_samples_range = int(self.range_ratio * off_surface_samples)
+        off_surface_samples_space = off_surface_samples - off_surface_samples_range
+
+        off_surface_coords_range = np.random.uniform(self.range_min, self.range_max,
+                                                     size=(off_surface_samples_range, 3))
+
+        off_surface_coords_space = np.zeros((0, 3))
+        while (off_surface_coords_space.shape[0] < off_surface_samples_space):
+            off_surface_coords_space_pre = np.random.uniform(-1, 1, size=(off_surface_samples, 3))
+            off_surface_coords_space_pre_loc = (
+            ((off_surface_coords_space_pre > self.range_min)) & (off_surface_coords_space_pre < self.range_max)).all(
+                axis=1)
+            off_surface_coords_space_pre = off_surface_coords_space_pre[~off_surface_coords_space_pre_loc]
+            off_surface_coords_space = np.concatenate((off_surface_coords_space, off_surface_coords_space_pre), axis=0)
+        off_surface_coords_space = off_surface_coords_space[0:off_surface_samples_space]
+
+        off_surface_coords = np.concatenate((off_surface_coords_range, off_surface_coords_space), axis=0)
+        off_surface_normals = np.ones((off_surface_samples, 3)) * -1
+
+        # false means not in sight while true means in sight
+        inner_result, outer_result = self.projection_result(
+            (off_surface_coords / 2 + 0.5) * (self.coord_max - self.coord_min) + self.coord_min)
+
+        sdf = np.zeros((total_samples, 1))  # on-surface = 0
+
+        sdf[self.on_surface_points:, :][inner_result] = 1  # off-surface and in sight inner = 1
+        sdf[self.on_surface_points:, :][~inner_result] = 2  # off-surface ,in range ,and not in sight = 2
+        sdf[self.on_surface_points + off_surface_samples_range:, :] = -2  # off-surface ,not in range = 2
+        sdf[self.on_surface_points:, :][outer_result] = -1  # off-surface and in sight outer = -1
+
+        coords = np.concatenate((on_surface_coords, on_surface_coords_res, off_surface_coords), axis=0)
+        normals = np.concatenate((on_surface_normals, on_surface_normals_res, off_surface_normals), axis=0)
+
+        # # visuliaze
+        # mlab.points3d(coords[sdf[:,0]==0,0], coords[sdf[:,0]==0,1], coords[sdf[:,0]==0,2], colormap='spectral', scale_factor=0.005, color=(0,1,0))
+        # mlab.points3d(coords[sdf[:,0]==1,0], coords[sdf[:,0]==1,1], coords[sdf[:,0]==1,2], colormap='spectral', scale_factor=0.005, color=(0,0,1))
+        # mlab.points3d(coords[sdf[:,0]==-1,0], coords[sdf[:,0]==-1,1], coords[sdf[:,0]==-1,2], colormap='spectral', scale_factor=0.005, color=(1,0,0))
+        # mlab.points3d(coords[sdf[:,0]==2,0], coords[sdf[:,0]==2,1], coords[sdf[:,0]==2,2], colormap='spectral', scale_factor=0.005, color=(1,1,0))
+        # mlab.points3d(coords[sdf[:,0]==-2,0], coords[sdf[:,0]==-2,1], coords[sdf[:,0]==-2,2], colormap='spectral', scale_factor=0.005, color=(0,1,1))
+        # mlab.show()
+
+        return {'coords': torch.from_numpy(coords).float()}, {'sdf': torch.from_numpy(sdf).float(),
+                                                              'normals': torch.from_numpy(normals).float()}
+
+    def projection_result(self, points):
+        number = points.shape[0]
+        # [number, 3]
+        point_in_camera_cordinate = (
+        np.dot(self.rot, points.transpose()) + np.tile(self.trans, (number, 1)).transpose()).transpose()
+        # [number, 2]
+        proj_res = (np.dot(self.intrinsic, (
+        point_in_camera_cordinate / np.tile(point_in_camera_cordinate[:, 2], (3, 1)).transpose()).transpose())[
+                    0:2]).transpose()
+
+        # if point is in front of the camera, and projection in side of width and height return true;
+        judge_res = ((proj_res < np.tile(self.picture_size, (number, 1))) & (proj_res >= np.zeros((number, 2)))).all(
+            axis=1)
+        inner_res = judge_res.copy()
+        outer_res = judge_res.copy()
+
+        # depth < depth image and depth > 0 and depth image < 10(depth trunc)
+        judge_proj_inner = (point_in_camera_cordinate[judge_res, 2] < self.depth[
+            proj_res[judge_res, 0].astype(int), proj_res[judge_res, 1].astype(int)]) \
+                           & (point_in_camera_cordinate[judge_res, 2] > np.zeros_like(
+            point_in_camera_cordinate[judge_res, 2])) \
+                           & (self.depth[proj_res[judge_res, 0].astype(int), proj_res[judge_res, 1].astype(int)] < 10)
+
+        judge_proj_outer = (point_in_camera_cordinate[judge_res, 2] > self.depth[
+            proj_res[judge_res, 0].astype(int), proj_res[judge_res, 1].astype(int)]) \
+                           & (self.depth[proj_res[judge_res, 0].astype(int), proj_res[judge_res, 1].astype(int)] < 10)
+        inner_res[judge_res] = judge_proj_inner
+        outer_res[judge_res] = judge_proj_outer
+
+        # judge for square
+        insight_coord_max = np.amax(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
+        insight_coord_min = np.amin(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
+        inner_res = (
+        ((point_in_camera_cordinate > insight_coord_min) & (point_in_camera_cordinate < insight_coord_max)).all(
+            axis=1) & (~outer_res))
+        return inner_res, outer_res
+
 class Video(Dataset):
     def __init__(self, path_to_video):
         super().__init__()

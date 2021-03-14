@@ -7,7 +7,7 @@ import os
 sys.path.append( os.path.dirname( os.path.dirname( os.path.abspath(__file__) ) ) )
 
 import dataio, meta_modules, utils, training, loss_functions, modules
-
+import torch
 from torch.utils.data import DataLoader
 import configargparse
 import numpy as np
@@ -46,6 +46,9 @@ p.add_argument('--camera_depth_path', type=str, default='/home/sitzmann/data/dep
                help='camera depth image in')
 p.add_argument('--camera_intrinsic', type=str, default='/home/sitzmann/data/intrinsic.txt',
                help='camera pose in tum format')
+p.add_argument('--reservoir_path', type=str, default='/home/sitzmann/data/point_cloud.xyz',
+               help='reservoir path')
+p.add_argument('--train_mode', type=int, default=0, help='0:batch 1:finetune 2:reservoir.')
 opt = p.parse_args()
 
 # load camera intrinsic
@@ -56,7 +59,12 @@ with open(opt.camera_intrinsic) as f:
 pose = np.genfromtxt(opt.camera_pose_path)[opt.camera_number-1,1:]
 
 
-sdf_dataset = dataio.PointCloud(opt.point_cloud_path, on_surface_points=opt.batch_size, intrinsic=intrinsic, pose=pose, camera_depth_path=os.path.join(opt.camera_depth_path))
+if opt.train_mode == 2:
+    sdf_dataset = dataio.Reservoir(opt.point_cloud_path, opt.reservoir_path, on_surface_points=opt.batch_size, intrinsic=intrinsic,
+                                    pose=pose, camera_depth_path=os.path.join(opt.camera_depth_path))
+else:
+    sdf_dataset = dataio.PointCloud(opt.point_cloud_path, on_surface_points=opt.batch_size, intrinsic=intrinsic,
+                                    pose=pose, camera_depth_path=os.path.join(opt.camera_depth_path))
 
 dataloader = DataLoader(sdf_dataset, shuffle=True, batch_size=1, pin_memory=True, num_workers=0)
 
@@ -65,6 +73,9 @@ if opt.model_type == 'nerf':
     model = modules.SingleBVPNet(type='relu', mode='nerf', in_features=3)
 else:
     model = modules.SingleBVPNet(type=opt.model_type, in_features=3)
+if opt.train_mode != 0:
+    model.load_state_dict(torch.load(opt.checkpoint_path))
+    print('load checkpoint: ', opt.checkpoint_path)
 model.cuda()
 
 # Define the loss
