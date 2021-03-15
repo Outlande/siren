@@ -486,27 +486,26 @@ class PointCloud(Dataset):
         off_surface_samples_space = off_surface_samples - off_surface_samples_range
 
         off_surface_coords_range = np.random.uniform(self.range_min, self.range_max, size=(off_surface_samples_range, 3))
-
-        off_surface_coords_space = np.zeros((0,3))
-        while(off_surface_coords_space.shape[0] < off_surface_samples_space):
-            off_surface_coords_space_pre = np.random.uniform(-1, 1, size=(off_surface_samples, 3))
-            off_surface_coords_space_pre_loc = (((off_surface_coords_space_pre > self.range_min)) & (off_surface_coords_space_pre < self.range_max)).all(axis=1)
-            off_surface_coords_space_pre = off_surface_coords_space_pre[~off_surface_coords_space_pre_loc]
-            off_surface_coords_space = np.concatenate((off_surface_coords_space, off_surface_coords_space_pre), axis=0)
-        off_surface_coords_space = off_surface_coords_space[0:off_surface_samples_space]
+        off_surface_coords_space = np.random.uniform(-1, 1, size=(off_surface_samples_space, 3))
+        # off_surface_coords_space = np.zeros((0,3))
+        # while(off_surface_coords_space.shape[0] < off_surface_samples_space):
+        #     off_surface_coords_space_pre = np.random.uniform(-1, 1, size=(off_surface_samples, 3))
+        #     off_surface_coords_space_pre_loc = (((off_surface_coords_space_pre > self.range_min)) & (off_surface_coords_space_pre < self.range_max)).all(axis=1)
+        #     off_surface_coords_space_pre = off_surface_coords_space_pre[~off_surface_coords_space_pre_loc]
+        #     off_surface_coords_space = np.concatenate((off_surface_coords_space, off_surface_coords_space_pre), axis=0)
+        # off_surface_coords_space = off_surface_coords_space[0:off_surface_samples_space]
 
         off_surface_coords = np.concatenate((off_surface_coords_range, off_surface_coords_space), axis=0)
         off_surface_normals = np.ones((off_surface_samples, 3)) * -1
 
         # false means not in sight while true means in sight
-        inner_result, outer_result = self.projection_result( (off_surface_coords/2+0.5)*(self.coord_max - self.coord_min) + self.coord_min)
+        positive_space, negative_space = self.projection_result( (off_surface_coords_space/2+0.5)*(self.coord_max - self.coord_min) + self.coord_min)
 
         sdf = np.zeros((total_samples, 1))  # on-surface = 0
 
-        sdf[self.on_surface_points:, :][inner_result] = 1  # off-surface and in sight inner = 1
-        sdf[self.on_surface_points:, :][~inner_result] = 2  # off-surface ,in range ,and not in sight = 2
-        sdf[self.on_surface_points+off_surface_samples_range:, :] = -2  # off-surface ,not in range = 2
-        sdf[self.on_surface_points:, :][outer_result] = -1  # off-surface and in sight outer = -1
+        sdf[self.on_surface_points:, :] = 2  # range data
+        sdf[self.on_surface_points + off_surface_samples_range:, :][positive_space] = 1  # positive space
+        sdf[self.on_surface_points + off_surface_samples_range:, :][negative_space] = -1  # negative space
         
         coords = np.concatenate((on_surface_coords, off_surface_coords), axis=0)
         normals = np.concatenate((on_surface_normals, off_surface_normals), axis=0)
@@ -517,7 +516,7 @@ class PointCloud(Dataset):
             mlab.points3d(coords[sdf[:,0]==1,0], coords[sdf[:,0]==1,1], coords[sdf[:,0]==1,2], colormap='spectral', scale_factor=0.005, color=(0,0,1))
             mlab.points3d(coords[sdf[:,0]==-1,0], coords[sdf[:,0]==-1,1], coords[sdf[:,0]==-1,2], colormap='spectral', scale_factor=0.005, color=(1,0,0))
             mlab.points3d(coords[sdf[:,0]==2,0], coords[sdf[:,0]==2,1], coords[sdf[:,0]==2,2], colormap='spectral', scale_factor=0.005, color=(1,1,0))
-            mlab.points3d(coords[sdf[:,0]==-2,0], coords[sdf[:,0]==-2,1], coords[sdf[:,0]==-2,2], colormap='spectral', scale_factor=0.005, color=(0,1,1))
+            #mlab.points3d(coords[sdf[:,0]==-2,0], coords[sdf[:,0]==-2,1], coords[sdf[:,0]==-2,2], colormap='spectral', scale_factor=0.005, color=(0,1,1))
             mlab.show()
 
         return {'coords': torch.from_numpy(coords).float()}, {'sdf': torch.from_numpy(sdf).float(),
@@ -546,9 +545,9 @@ class PointCloud(Dataset):
         outer_res[judge_res] = judge_proj_outer
 
         # judge for square
-        insight_coord_max = np.amax(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
-        insight_coord_min = np.amin(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
-        inner_res = (((point_in_camera_cordinate > insight_coord_min) & (point_in_camera_cordinate < insight_coord_max)).all(axis=1) &  (~outer_res))
+        # insight_coord_max = np.amax(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
+        # insight_coord_min = np.amin(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
+        # inner_res = (((point_in_camera_cordinate > insight_coord_min) & (point_in_camera_cordinate < insight_coord_max)).all(axis=1) &  (~outer_res))
         return inner_res, outer_res
 
 
@@ -653,30 +652,34 @@ class Reservoir(Dataset):
 
         off_surface_coords_range = np.random.uniform(self.range_min, self.range_max,
                                                      size=(off_surface_samples_range, 3))
-
-        off_surface_coords_space = np.zeros((0, 3))
-        while (off_surface_coords_space.shape[0] < off_surface_samples_space):
-            off_surface_coords_space_pre = np.random.uniform(-1, 1, size=(off_surface_samples, 3))
-            off_surface_coords_space_pre_loc = (
-            ((off_surface_coords_space_pre > self.range_min)) & (off_surface_coords_space_pre < self.range_max)).all(
-                axis=1)
-            off_surface_coords_space_pre = off_surface_coords_space_pre[~off_surface_coords_space_pre_loc]
-            off_surface_coords_space = np.concatenate((off_surface_coords_space, off_surface_coords_space_pre), axis=0)
-        off_surface_coords_space = off_surface_coords_space[0:off_surface_samples_space]
-
+        off_surface_coords_space = np.random.uniform(-1, 1, size=(off_surface_samples_space, 3))
         off_surface_coords = np.concatenate((off_surface_coords_range, off_surface_coords_space), axis=0)
         off_surface_normals = np.ones((off_surface_samples, 3)) * -1
+        positive_space, negative_space = self.projection_result(
+            (off_surface_coords_space / 2 + 0.5) * (self.coord_max - self.coord_min) + self.coord_min, off_surface_coords_space)
+
+        # off_surface_coords_space = np.zeros((0, 3))
+        # while (off_surface_coords_space.shape[0] < off_surface_samples_space):
+        #     off_surface_coords_space_pre = np.random.uniform(-1, 1, size=(off_surface_samples, 3))
+        #     off_surface_coords_space_pre_loc = (
+        #     ((off_surface_coords_space_pre > self.range_min)) & (off_surface_coords_space_pre < self.range_max)).all(
+        #         axis=1)
+        #     off_surface_coords_space_pre = off_surface_coords_space_pre[~off_surface_coords_space_pre_loc]
+        #     off_surface_coords_space = np.concatenate((off_surface_coords_space, off_surface_coords_space_pre), axis=0)
+        # off_surface_coords_space = off_surface_coords_space[0:off_surface_samples_space]
+        #
+        # off_surface_coords = np.concatenate((off_surface_coords_range, off_surface_coords_space), axis=0)
+        # off_surface_normals = np.ones((off_surface_samples, 3)) * -1
 
         # false means not in sight while true means in sight
-        inner_result, outer_result = self.projection_result(
-            (off_surface_coords / 2 + 0.5) * (self.coord_max - self.coord_min) + self.coord_min, off_surface_coords)
+        # inner_result, outer_result = self.projection_result(
+        #     (off_surface_coords_space / 2 + 0.5) * (self.coord_max - self.coord_min) + self.coord_min, off_surface_coords_space)
 
         sdf = np.zeros((total_samples, 1))  # on-surface = 0
 
-        sdf[self.on_surface_points:, :][inner_result] = 1  # off-surface and in sight inner = 1
-        sdf[self.on_surface_points:, :][~inner_result] = 2  # off-surface ,in range ,and not in sight = 2
-        sdf[self.on_surface_points + off_surface_samples_range:, :] = -2  # off-surface ,not in range = 2
-        sdf[self.on_surface_points:, :][outer_result] = -1  # off-surface and in sight outer = -1
+        sdf[self.on_surface_points:,:] = 2  # range data
+        sdf[self.on_surface_points + off_surface_samples_range:, :][positive_space] = 1  # positive space
+        sdf[self.on_surface_points + off_surface_samples_range:, :][negative_space] = -1  # negative space
 
         coords = np.concatenate((on_surface_coords, on_surface_coords_res, off_surface_coords), axis=0)
         normals = np.concatenate((on_surface_normals, on_surface_normals_res, off_surface_normals), axis=0)
@@ -687,13 +690,13 @@ class Reservoir(Dataset):
             mlab.points3d(coords[sdf[:,0]==1,0], coords[sdf[:,0]==1,1], coords[sdf[:,0]==1,2], colormap='spectral', scale_factor=0.005, color=(0,0,1))
             mlab.points3d(coords[sdf[:,0]==-1,0], coords[sdf[:,0]==-1,1], coords[sdf[:,0]==-1,2], colormap='spectral', scale_factor=0.005, color=(1,0,0))
             mlab.points3d(coords[sdf[:,0]==2,0], coords[sdf[:,0]==2,1], coords[sdf[:,0]==2,2], colormap='spectral', scale_factor=0.005, color=(1,1,0))
-            mlab.points3d(coords[sdf[:,0]==-2,0], coords[sdf[:,0]==-2,1], coords[sdf[:,0]==-2,2], colormap='spectral', scale_factor=0.005, color=(0,1,1))
+            #mlab.points3d(coords[sdf[:,0]==-2,0], coords[sdf[:,0]==-2,1], coords[sdf[:,0]==-2,2], colormap='spectral', scale_factor=0.005, color=(0,1,1))
             mlab.show()
 
         return {'coords': torch.from_numpy(coords).float()}, {'sdf': torch.from_numpy(sdf).float(),
                                                               'normals': torch.from_numpy(normals).float()}
 
-    def projection_result(self, points, points_normal):
+    def projection_result(self, points, points_normalized):
         number = points.shape[0]
         # [number, 3]
         point_in_camera_cordinate = (
@@ -731,9 +734,9 @@ class Reservoir(Dataset):
 
 
         # pretrained_model judge
-        sdf_pre = self.pretrained_model(torch.tensor(points_normal, dtype=torch.float32).cuda()).squeeze().detach().cpu().numpy()
-        insight_pre = sdf_pre > 0
-        outsight_pre = sdf_pre <= 0
+        sdf_pre = self.pretrained_model(torch.tensor(points_normalized, dtype=torch.float32).cuda()).squeeze().detach().cpu().numpy()
+        pred_positive = sdf_pre > 0
+        pred_negative = sdf_pre < 0
 
         # inner present watched now or yet
         # outer present never watched and outside
@@ -741,9 +744,11 @@ class Reservoir(Dataset):
         # outer_res = ((outer_res) | (outsight_pre)) & (~inner_res)
 
         # outer is sum of outer in pre or now and cant be inner
-        outer_res = (outer_res) | (outsight_pre) & (~inner_res)
+        #outer_res = (outer_res) | (outsight_pre) & (~inner_res)
+        positive = (pred_positive) | (inner_res)
+        negative = (outer_res) & (~pred_positive)
 
-        return inner_res, outer_res
+        return positive, negative
 
 class Video(Dataset):
     def __init__(self, path_to_video):

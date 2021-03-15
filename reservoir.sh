@@ -1,13 +1,12 @@
 #!/bin/bash
 dataset=ICL2_clean_consistent_normal
 ori_dataset=/home/yan/Dataset/ICL/living2/clean
-output=ICL2_reservoir_back_negative
+output=ICL2_reservoir_union
 
-python experiment_scripts/train_sdf.py --model_type=sine --point_cloud_path=/media/yan/Passport/${dataset}/10.xyz --batch_size=170000 \
-    --experiment_name=network/${output}/10 --epochs_til_ckpt=100 --camera_pose_path=${ori_dataset}/traj0.gt.freiburg \
-    --camera_number=10 --camera_depth_path=${ori_dataset}/depth/10.png --camera_intrinsic=${ori_dataset}/ICL_gt.yaml --num_epochs=10000
-
-python experiment_scripts/test_sdf.py --checkpoint_path=logs/network/${output}/10/checkpoints/model_current.pth --experiment_name=model/${output}/10/ --resolution=512
+#python experiment_scripts/train_sdf.py --model_type=sine --point_cloud_path=/media/yan/Passport/${dataset}/10.xyz --batch_size=170000 \
+#    --experiment_name=network/${output}/10 --epochs_til_ckpt=100 --camera_pose_path=${ori_dataset}/traj0.gt.freiburg \
+#    --camera_number=10 --camera_depth_path=${ori_dataset}/depth/10.png --camera_intrinsic=${ori_dataset}/ICL_gt.yaml --num_epochs=10000
+#python experiment_scripts/test_sdf.py --checkpoint_path=logs/network/${output}/10/checkpoints/model_current.pth --experiment_name=model/${output}/10/ --resolution=512
 
 for ((i=1;i<=86;i++));
 do
