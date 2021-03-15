@@ -507,7 +507,7 @@ class PointCloud(Dataset):
         sdf[self.on_surface_points:, :][~inner_result] = 2  # off-surface ,in range ,and not in sight = 2
         sdf[self.on_surface_points+off_surface_samples_range:, :] = -2  # off-surface ,not in range = 2
         sdf[self.on_surface_points:, :][outer_result] = -1  # off-surface and in sight outer = -1
-        
+
         coords = np.concatenate((on_surface_coords, off_surface_coords), axis=0)
         normals = np.concatenate((on_surface_normals, off_surface_normals), axis=0)
 
@@ -545,15 +545,11 @@ class PointCloud(Dataset):
         inner_res[judge_res] = judge_proj_inner
         outer_res[judge_res] = judge_proj_outer
 
-        # judge for square
-        insight_coord_max = np.amax(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
-        insight_coord_min = np.amin(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
-        inner_res = (((point_in_camera_cordinate > insight_coord_min) & (point_in_camera_cordinate < insight_coord_max)).all(axis=1) &  (~outer_res))
         return inner_res, outer_res
 
 
 class Reservoir(Dataset):
-    def __init__(self, pointcloud_path, reservoir_path, on_surface_points, intrinsic, pose, camera_depth_path, last_checkpoint, keep_aspect_ratio=True, visual=False):
+    def __init__(self, pointcloud_path, reservoir_path, on_surface_points, intrinsic, pose, camera_depth_path, last_checkpoint, keep_aspect_ratio=True, visual=True):
         super().__init__()
 
         print("Loading point cloud")
@@ -722,14 +718,6 @@ class Reservoir(Dataset):
         inner_res[judge_res] = judge_proj_inner
         outer_res[judge_res] = judge_proj_outer
 
-        # # judge for square
-        # insight_coord_max = np.amax(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
-        # insight_coord_min = np.amin(point_in_camera_cordinate[inner_res], axis=0, keepdims=True)
-        # inner_res = (
-        # ((point_in_camera_cordinate > insight_coord_min) & (point_in_camera_cordinate < insight_coord_max)).all(
-        #     axis=1) & (~outer_res))
-
-
         # pretrained_model judge
         sdf_pre = self.pretrained_model(torch.tensor(points_normal, dtype=torch.float32).cuda()).squeeze().detach().cpu().numpy()
         insight_pre = sdf_pre > 0
@@ -737,11 +725,8 @@ class Reservoir(Dataset):
 
         # inner present watched now or yet
         # outer present never watched and outside
-        # inner_res = (inner_res) | (insight_pre)
-        # outer_res = ((outer_res) | (outsight_pre)) & (~inner_res)
-
-        # outer is sum of outer in pre or now and cant be inner
-        outer_res = (outer_res) | (outsight_pre) & (~inner_res)
+        inner_res = (inner_res) | (insight_pre)
+        outer_res = ((outer_res) | (outsight_pre)) & (~inner_res)
 
         return inner_res, outer_res
 

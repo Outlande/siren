@@ -50,7 +50,6 @@ p.add_argument('--reservoir_path', type=str, default='/home/sitzmann/data/point_
                help='reservoir path')
 p.add_argument('--train_mode', type=int, default=0, help='0:batch 1:finetune 2:reservoir.')
 
-p.add_argument('--last_checkpoint', default=None, help='Checkpoint to finetune model.')
 
 opt = p.parse_args()
 
@@ -64,7 +63,7 @@ pose = np.genfromtxt(opt.camera_pose_path)[opt.camera_number-1,1:]
 
 if opt.train_mode == 2:
     sdf_dataset = dataio.Reservoir(opt.point_cloud_path, opt.reservoir_path, on_surface_points=opt.batch_size, intrinsic=intrinsic,
-                                    pose=pose, camera_depth_path=os.path.join(opt.camera_depth_path), last_checkpoint=opt.last_checkpoint)
+                                    pose=pose, camera_depth_path=os.path.join(opt.camera_depth_path), last_checkpoint=opt.checkpoint_path)
 else:
     sdf_dataset = dataio.PointCloud(opt.point_cloud_path, on_surface_points=opt.batch_size, intrinsic=intrinsic,
                                     pose=pose, camera_depth_path=os.path.join(opt.camera_depth_path))
