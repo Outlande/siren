@@ -549,7 +549,7 @@ class PointCloud(Dataset):
 
 
 class Reservoir(Dataset):
-    def __init__(self, pointcloud_path, reservoir_path, on_surface_points, intrinsic, pose, camera_depth_path, last_checkpoint, keep_aspect_ratio=True, visual=True):
+    def __init__(self, pointcloud_path, reservoir_path, on_surface_points, intrinsic, pose, camera_depth_path, last_checkpoint, keep_aspect_ratio=True, visual=False):
         super().__init__()
 
         print("Loading point cloud")

@@ -228,7 +228,7 @@ def sdf(model_output, gt):
     sdf_constraint = torch.where(gt_sdf == 0, pred_sdf, torch.zeros_like(pred_sdf))
 
     # inter_constraint = torch.where((gt_sdf == -2)|(gt_sdf == 2)|(gt_sdf == 1), torch.exp(-1e2 * torch.abs(pred_sdf)), torch.zeros_like(pred_sdf))
-    inter_constraint = torch.where((gt_sdf == -2)|(gt_sdf == 2)|(gt_sdf == -1), torch.exp(-1e2 * pred_sdf), torch.zeros_like(pred_sdf))
+    inter_constraint = torch.where((gt_sdf == -2)|(gt_sdf == 2)|(gt_sdf == -1), torch.exp(1e2 * pred_sdf), torch.zeros_like(pred_sdf))
     # free_constraint = torch.where(gt_sdf == 1, torch.exp(-1e2*pred_sdf), torch.zeros_like(pred_sdf))
     space_constraint = torch.where(gt_sdf == 1, torch.exp(-1e2*pred_sdf), torch.zeros_like(pred_sdf))
 
