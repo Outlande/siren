@@ -671,7 +671,7 @@ class Reservoir(Dataset):
 
         sdf[self.on_surface_points:, :][inner_result] = 1  # off-surface and in sight inner = 1
         sdf[self.on_surface_points:, :][~inner_result] = 2  # off-surface ,in range ,and not in sight = 2
-        sdf[self.on_surface_points + off_surface_samples_range:, :] = -2  # off-surface ,not in range = 2
+        sdf[self.on_surface_points + off_surface_samples_range:, :] = -2  # off-surface ,not in range = -2
         sdf[self.on_surface_points:, :][outer_result] = -1  # off-surface and in sight outer = -1
 
         coords = np.concatenate((on_surface_coords, on_surface_coords_res, off_surface_coords), axis=0)
@@ -726,7 +726,7 @@ class Reservoir(Dataset):
         # inner present watched now or yet
         # outer present never watched and outside
         inner_res = (inner_res) | (insight_pre)
-        outer_res = ((outer_res) | (outsight_pre)) & (~inner_res)
+        outer_res = (outer_res) & (outsight_pre) & (~inner_res)
 
         return inner_res, outer_res
 

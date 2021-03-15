@@ -1,12 +1,12 @@
 #!/bin/bash
 location=../datasets
-dataset=ICL2_clean
+dataset=ICL2_clean_consistent_normal
 image_dataset=ICL2_clean_RGBD
-output=ICL2_reservoir_union_pos
+output=ICL2_reservoir_union_abs
 
 python experiment_scripts/train_sdf.py --model_type=sine --point_cloud_path=${location}/${dataset}/10.xyz --batch_size=80000 \
     --experiment_name=network/${output}/10 --epochs_til_ckpt=100 --camera_pose_path=${location}/${image_dataset}/traj0.gt.freiburg \
-    --camera_number=10 --camera_depth_path=${location}/${image_dataset}/depth/10.png --camera_intrinsic=${location}/${image_dataset}/ICL_gt.yaml --num_epochs=4000
+    --camera_number=10 --camera_depth_path=${location}/${image_dataset}/depth/10.png --camera_intrinsic=${location}/${image_dataset}/ICL_gt.yaml --num_epochs=1500
 
 python experiment_scripts/test_sdf.py --checkpoint_path=logs/network/${output}/10/checkpoints/model_current.pth --experiment_name=model/${output}/10/ --resolution=512
 
