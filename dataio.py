@@ -721,7 +721,7 @@ class Reservoir(Dataset):
         # pretrained_model judge
         sdf_pre = self.pretrained_model(torch.tensor(points_normal, dtype=torch.float32).cuda()).squeeze().detach().cpu().numpy()
         insight_pre = sdf_pre > 0
-        outsight_pre = sdf_pre <= 0
+        outsight_pre = sdf_pre < 0
 
         # inner present watched now or yet
         # outer present never watched and outside

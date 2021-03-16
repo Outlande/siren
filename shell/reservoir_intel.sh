@@ -2,7 +2,7 @@
 location=/home/yan/Desktop/datasets
 dataset=ICL2_clean_consistent_normal
 image_dataset=ICL2_clean_RGBD
-output=ICL2_reservoir_union_neg
+output=ICL2_union_pos
 
 python experiment_scripts/train_sdf.py --model_type=sine --point_cloud_path=${location}/${dataset}/10.xyz --batch_size=120000 \
     --experiment_name=network/${output}/10 --epochs_til_ckpt=100 --camera_pose_path=${location}/${image_dataset}/traj0.gt.freiburg \
