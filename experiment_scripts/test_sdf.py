@@ -27,6 +27,8 @@ p.add_argument('--model_type', type=str, default='sine',
 p.add_argument('--mode', type=str, default='mlp',
                help='Options are "mlp" or "nerf"')
 p.add_argument('--resolution', type=int, default=1600)
+p.add_argument('--point_cloud_path', default=None, help='load point cloud path')
+
 
 opt = p.parse_args()
 
@@ -52,4 +54,4 @@ sdf_decoder = SDFDecoder()
 root_path = os.path.join(opt.logging_root, opt.experiment_name)
 utils.cond_mkdir(root_path)
 
-sdf_meshing.create_mesh(sdf_decoder, os.path.join(root_path, 'test'), N=opt.resolution)
+sdf_meshing.create_mesh(sdf_decoder, os.path.join(root_path, 'test'), opt.point_cloud_path, N=opt.resolution, )

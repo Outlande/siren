@@ -11,8 +11,22 @@ import torch
 
 
 def create_mesh(
-    decoder, filename, N=256, max_batch=64 ** 3, offset=None, scale=None
+    decoder, filename, point_cloud_path, N=256, max_batch=64 ** 3, offset=None, scale=None
 ):
+    # [num,3]
+    point_cloud_coord = np.genfromtxt(point_cloud_path)[:,0:3]
+    coord_max = 4.513088101054274
+    coord_min = -4.468375898945726
+    # in 0 - N-1
+    point_cloud_coord_norm = (((point_cloud_coord - coord_min) / (coord_max - coord_min))*(N-1)+0.5).astype(int)
+
+    point_cloud_mask = (np.zeros((N, N, N)) != 0)
+    loc_size = 3
+    for idx in range(-loc_size, loc_size):
+        for idy in range(-loc_size, loc_size):
+            for idz in range(-loc_size, loc_size):
+                point_cloud_mask[point_cloud_coord_norm[:,0]+idx, point_cloud_coord_norm[:,1]+idy, point_cloud_coord_norm[:,2]+idz] = True
+
     start = time.time()
     ply_filename = filename
 
@@ -66,6 +80,7 @@ def create_mesh(
         voxel_origin,
         voxel_size,
         ply_filename + ".ply",
+        point_cloud_mask,
         offset,
         scale,
     )
@@ -76,6 +91,7 @@ def convert_sdf_samples_to_ply(
     voxel_grid_origin,
     voxel_size,
     ply_filename_out,
+    point_cloud_mask,
     offset=None,
     scale=None,
 ):
@@ -97,7 +113,7 @@ def convert_sdf_samples_to_ply(
     verts, faces, normals, values = np.zeros((0, 3)), np.zeros((0, 3)), np.zeros((0, 3)), np.zeros(0)
     try:
         verts, faces, normals, values = skimage.measure.marching_cubes_lewiner(
-            numpy_3d_sdf_tensor, level=0.0, spacing=[voxel_size] * 3
+            numpy_3d_sdf_tensor, level=0.0, spacing=[voxel_size] * 3, mask=point_cloud_mask
         )
     except:
         pass
