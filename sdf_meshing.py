@@ -44,7 +44,7 @@ def create_mesh(
     head = 0
 
     while head < num_samples:
-        print(head)
+        #print(head)
         sample_subset = samples[head : min(head + max_batch, num_samples), 0:3].cuda()
 
         samples[head : min(head + max_batch, num_samples), 3] = (

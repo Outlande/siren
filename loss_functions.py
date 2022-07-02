@@ -230,7 +230,7 @@ def sdf(model_output, gt):
     # inter_constraint = torch.where((gt_sdf == -2)|(gt_sdf == 2)|(gt_sdf == 1), torch.exp(-1e2 * torch.abs(pred_sdf)), torch.zeros_like(pred_sdf))
     inter_constraint = torch.where((gt_sdf == 2), torch.exp(-1e2 * abs(pred_sdf)), torch.zeros_like(pred_sdf))
     positive_constraint = torch.where(gt_sdf == 1, torch.exp(-1e2*pred_sdf), torch.zeros_like(pred_sdf))
-    negative_constraint = torch.where(gt_sdf == -1, torch.exp(1e2*pred_sdf), torch.zeros_like(pred_sdf))
+    negative_constraint = torch.where(gt_sdf == -1, torch.exp(1e2 * pred_sdf), torch.zeros_like(pred_sdf))
 
     normal_constraint = torch.where(gt_sdf == 0, 1 - F.cosine_similarity(gradient, gt_normals, dim=-1)[..., None],
                                     torch.zeros_like(gradient[..., :1]))

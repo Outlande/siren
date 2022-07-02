@@ -418,10 +418,18 @@ class PointCloud(Dataset):
         # Reshape point cloud such that it lies in bounding box of (-1, 1) (distorts geometry, but makes for high
         # sample efficiency)
         # coords -= np.mean(coords, axis=0, keepdims=True)
+        # TUM1 desk
+        #coord_max = 2.7345718652
+        #coord_min = -2.4012687613
+        # TUM2 desk
+        # coord_max = 3.5440599636
+        # coord_min = -2.7687519401
+        # TUM3 long office:
+        # coord_max = 2.8593167308914826
+        # coord_min = -3.3439206365085177
         coord_max = 4.513088101054274
         coord_min = -4.468375898945726
-        # coord_max = 2.6277952141
-        # coord_min = -2.4723310908
+
         if keep_aspect_ratio:
             frame_coord_max = np.amax(coords)
             frame_coord_min = np.amin(coords)
@@ -454,10 +462,13 @@ class PointCloud(Dataset):
                             [0.01854, 0.00365819, -0.999821, 1.45583],
                             [0, 0, 0, 1]])
         self.intrinsic = intrinsic
+        #print(intrinsic)
 
         self.pose_mat = np.eye(4)
         self.pose_mat[0:3, 0:3] = R.from_quat(pose[3:7]).as_matrix()
         self.pose_mat[0:3, 3] = pose[0:3]
+        #self.pose_mat = np.linalg.inv(self.pose_mat)
+        # for ICL
         self.pose_mat = np.linalg.inv(np.dot(np.dot(self.T, self.T2), self.pose_mat))
 
         self.rot = self.pose_mat[0:3,0:3]
@@ -576,10 +587,18 @@ class Reservoir(Dataset):
         # Reshape point cloud such that it lies in bounding box of (-1, 1) (distorts geometry, but makes for high
         # sample efficiency)
         # coords -= np.mean(coords, axis=0, keepdims=True)
+        # TUM1 desk
+        #coord_max = 2.7345718652
+        #coord_min = -2.4012687613
+        # TUM2 desk
+        # coord_max = 3.5440599636
+        # coord_min = -2.7687519401
+        # TUM3 long office:
+        # coord_max = 2.8593167308914826
+        # coord_min = -3.3439206365085177
+        # ICL:
         coord_max = 4.513088101054274
         coord_min = -4.468375898945726
-        # coord_max = 2.6277952141
-        # coord_min = -2.4723310908
         if keep_aspect_ratio:
             frame_coord_max = np.amax(coords)
             frame_coord_min = np.amin(coords)
@@ -601,6 +620,9 @@ class Reservoir(Dataset):
         print("coord:", self.coord_max, self.coord_max)
         print("range:", self.range_min, self.range_max)
 
+        print(coords.shape[0])
+        print(coords_res.shape[0])
+
         self.on_surface_points = on_surface_points
 
         # new parameters for camera
@@ -618,6 +640,8 @@ class Reservoir(Dataset):
         self.pose_mat = np.eye(4)
         self.pose_mat[0:3, 0:3] = R.from_quat(pose[3:7]).as_matrix()
         self.pose_mat[0:3, 3] = pose[0:3]
+        #self.pose_mat = np.linalg.inv(self.pose_mat)
+        # for ICL
         self.pose_mat = np.linalg.inv(np.dot(np.dot(self.T, self.T2), self.pose_mat))
 
         self.rot = self.pose_mat[0:3, 0:3]
@@ -628,7 +652,7 @@ class Reservoir(Dataset):
         self.range_ratio = 2 / 3
 
     def __len__(self):
-        return self.coords.shape[0] // self.on_surface_points
+        return (max(self.coords.shape[0], self.on_surface_points) // self.on_surface_points) # in case TUM data is less than batch_size
 
     def __getitem__(self, idx):
         point_cloud_size = self.coords.shape[0]
